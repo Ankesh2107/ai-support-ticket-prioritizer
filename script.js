@@ -71,7 +71,7 @@ document.addEventListener('DOMContentLoaded', function() {
         hideResults();
 
         try {
-            // Call Cloudflare Worker instead of local server
+            // Call Cloudflare Worker
             const response = await fetch(WORKER_URL, {
                 method: 'POST',
                 headers: {
@@ -89,12 +89,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const data = await response.json();
             
-            // Extract AI response from Groq format
             let aiReply = '';
             let category = 'GENERAL';
             let priority = 'MEDIUM';
             
-            if (data.choices && data.choices[0] && data.choices[0].message) {
+            // Handle the response format from your worker
+            if (data.success && data.data) {
+                // Your worker's successful response format
+                category = data.data.category;
+                priority = data.data.priority;
+                aiReply = data.data.reply;
+            } 
+            // Handle raw Groq format (fallback)
+            else if (data.choices && data.choices[0] && data.choices[0].message) {
                 aiReply = data.choices[0].message.content;
                 
                 // Parse priority from AI response
@@ -107,14 +114,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
                 
                 // Parse category from AI response
-                if (aiReply.toLowerCase().includes('support') || aiReply.toLowerCase().includes('technical') || aiReply.toLowerCase().includes('login') || aiReply.toLowerCase().includes('error')) {
+                if (aiReply.toLowerCase().includes('support') || aiReply.toLowerCase().includes('technical') || 
+                    aiReply.toLowerCase().includes('login') || aiReply.toLowerCase().includes('error')) {
                     category = 'SUPPORT';
-                } else if (aiReply.toLowerCase().includes('sales') || aiReply.toLowerCase().includes('billing') || aiReply.toLowerCase().includes('payment')) {
+                } else if (aiReply.toLowerCase().includes('sales') || aiReply.toLowerCase().includes('billing') || 
+                           aiReply.toLowerCase().includes('payment')) {
                     category = 'SALES';
                 }
-            } else if (data.error) {
+            } 
+            // Handle direct format (another fallback)
+            else if (data.category && data.reply) {
+                category = data.category;
+                priority = data.priority || 'MEDIUM';
+                aiReply = data.reply;
+            } 
+            else if (data.error) {
                 throw new Error(data.error);
-            } else {
+            } 
+            else {
+                console.error('Unexpected response:', data);
                 throw new Error('Unexpected response format');
             }
 
