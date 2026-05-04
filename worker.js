@@ -42,27 +42,16 @@ export default {
             messages: [
               {
                 role: 'system',
-                content: `You are a support ticket analyzer. Analyze the ticket and respond with ONLY THREE THINGS in this exact JSON format:
+                content: `You are a support ticket analyzer. Analyze the ticket and respond with ONLY the reply text.
+Do NOT include category or priority in your response.
+Just write a professional, actionable response to the customer.
 
-{
-  "category": "SUPPORT or SALES or GENERAL",
-  "priority": "HIGH or MEDIUM or LOW",
-  "reply": "Write a professional, actionable response to the customer. Be specific and helpful. Do NOT include category or priority in the reply text. Keep it concise and professional."
-}
-
-Rules:
-- HIGH priority: Critical issues (login failures, payment problems, system down, enterprise customers)
-- MEDIUM priority: Important but not urgent (feature requests, how-to questions)
-- LOW priority: General inquiries, feedback, non-urgent
-- SUPPORT category: Technical issues, bugs, errors, access problems
-- SALES category: Billing, pricing, subscriptions, upgrades
-- GENERAL category: Questions, feedback, information
-
-Return ONLY valid JSON. No other text.`
+For example, respond like:
+"We understand how critical this issue is. We'll investigate immediately and provide an update within 30 minutes. Could you please share the exact error message you're seeing?"`
               },
               {
                 role: 'user',
-                content: `Analyze this support ticket and return category, priority, and reply:\n\n${message}`
+                content: `Analyze this support ticket and write a professional response:\n\n${message}`
               }
             ],
             temperature: 0.3,
@@ -72,22 +61,42 @@ Return ONLY valid JSON. No other text.`
 
         const data = await groqResponse.json();
         
-        // Try to parse JSON response
-        let parsedResponse;
-        try {
-          parsedResponse = JSON.parse(data.choices[0].message.content);
-        } catch (e) {
-          // Fallback if AI doesn't return valid JSON
-          parsedResponse = {
-            category: "GENERAL",
-            priority: "MEDIUM",
-            reply: data.choices[0].message.content
-          };
+        // Get the AI response text
+        const aiReply = data.choices[0].message.content;
+        
+        // Determine category and priority based on keywords
+        let category = "GENERAL";
+        let priority = "MEDIUM";
+        
+        const lowerMessage = message.toLowerCase();
+        
+        // Determine category
+        if (lowerMessage.includes('login') || lowerMessage.includes('error') || lowerMessage.includes('bug') || 
+            lowerMessage.includes('crash') || lowerMessage.includes('access') || lowerMessage.includes('technical')) {
+          category = "SUPPORT";
+        } else if (lowerMessage.includes('billing') || lowerMessage.includes('price') || lowerMessage.includes('payment') ||
+                   lowerMessage.includes('subscription') || lowerMessage.includes('invoice')) {
+          category = "SALES";
+        }
+        
+        // Determine priority
+        if (lowerMessage.includes('urgent') || lowerMessage.includes('critical') || lowerMessage.includes('emergency') ||
+            lowerMessage.includes('locked out') || lowerMessage.includes('enterprise') || 
+            lowerMessage.includes('entire team') || lowerMessage.includes('down')) {
+          priority = "HIGH";
+        } else if (lowerMessage.includes('how to') || lowerMessage.includes('question') || lowerMessage.includes('help with')) {
+          priority = "MEDIUM";
+        } else {
+          priority = "LOW";
         }
         
         return new Response(JSON.stringify({
           success: true,
-          data: parsedResponse
+          data: {
+            category: category,
+            priority: priority,
+            reply: aiReply
+          }
         }), {
           headers: {
             'Content-Type': 'application/json',
@@ -96,7 +105,11 @@ Return ONLY valid JSON. No other text.`
         });
         
       } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
+        console.error('Worker error:', error);
+        return new Response(JSON.stringify({ 
+          success: false,
+          error: error.message 
+        }), {
           status: 500,
           headers: {
             'Content-Type': 'application/json',
