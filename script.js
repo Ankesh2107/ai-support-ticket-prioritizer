@@ -8,6 +8,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const resetBtn = document.getElementById('resetBtn');
     const particlesContainer = document.getElementById('particles');
 
+    // Cloudflare Worker URL
+    const WORKER_URL = 'https://ai-support-ticket-prioritizer.ankeshrai2003.workers.dev';
+
     // Create floating particles
     createParticles();
     
@@ -68,7 +71,8 @@ document.addEventListener('DOMContentLoaded', function() {
         hideResults();
 
         try {
-            const response = await fetch('/process', {
+            // Call Cloudflare Worker instead of local server
+            const response = await fetch(WORKER_URL, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -76,36 +80,45 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: JSON.stringify({ message })
             });
 
-            // Check if response is ok before parsing JSON
+            // Check if response is ok
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error('Response not ok:', response.status, errorText);
                 throw new Error(`Server error: ${response.status}`);
             }
 
-            // Get response text first to check if it's valid JSON
-            const responseText = await response.text();
-            console.log('Raw response:', responseText);
+            const data = await response.json();
             
-            if (!responseText || responseText.trim() === '') {
-                throw new Error('Empty response from server');
-            }
-
-            // Try to parse JSON
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (parseError) {
-                console.error('JSON parse error:', parseError);
-                console.error('Response text:', responseText);
-                throw new Error('Invalid response format from server');
-            }
-
-            if (data.success && data.data) {
-                displayResults(data.data);
+            // Extract AI response from Groq format
+            let aiReply = '';
+            let category = 'GENERAL';
+            let priority = 'MEDIUM';
+            
+            if (data.choices && data.choices[0] && data.choices[0].message) {
+                aiReply = data.choices[0].message.content;
+                
+                // Parse priority from AI response
+                if (aiReply.toLowerCase().includes('priority: high') || aiReply.toLowerCase().includes('high priority')) {
+                    priority = 'HIGH';
+                } else if (aiReply.toLowerCase().includes('priority: low') || aiReply.toLowerCase().includes('low priority')) {
+                    priority = 'LOW';
+                } else {
+                    priority = 'MEDIUM';
+                }
+                
+                // Parse category from AI response
+                if (aiReply.toLowerCase().includes('support') || aiReply.toLowerCase().includes('technical') || aiReply.toLowerCase().includes('login') || aiReply.toLowerCase().includes('error')) {
+                    category = 'SUPPORT';
+                } else if (aiReply.toLowerCase().includes('sales') || aiReply.toLowerCase().includes('billing') || aiReply.toLowerCase().includes('payment')) {
+                    category = 'SALES';
+                }
+            } else if (data.error) {
+                throw new Error(data.error);
             } else {
-                throw new Error('Invalid response format');
+                throw new Error('Unexpected response format');
             }
+
+            displayResults({ category, priority, aiReply });
 
         } catch (error) {
             console.error('Error:', error);
